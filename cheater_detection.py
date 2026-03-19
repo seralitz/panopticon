@@ -379,13 +379,12 @@ def outlier_game_count(games, player):
 # ─── Aggregate per player ─────────────────────────────────────────────────────
 
 SIGNAL_COLS = [
-    'acpl', 't1_agreement', 'cpl_std',
+    'acpl', 'cpl_std',
     'critical_accuracy', 'skill_consistency_gap',
     'think_time_std', 'low_acpl_game_rate', 'outlier_game_count',
 ]
 NICE = {
     'acpl':                  'Avg Centipawn Loss',
-    't1_agreement':          'T1 Move Agreement',
     'cpl_std':               'CPL Std-Dev',
     'critical_accuracy':     'Critical Accuracy',
     'skill_consistency_gap': 'Skill-Consistency Gap',
@@ -401,7 +400,6 @@ def compute_player_signals(games, player):
         return None
     s = {
         'acpl':                  acpl(games, player),
-        't1_agreement':          t1_agreement(games, player),
         'cpl_std':               cpl_std(games, player),
         'critical_accuracy':     critical_accuracy(games, player),
         'skill_consistency_gap': skill_consistency_gap(games, player),
@@ -432,7 +430,6 @@ def create_synthetic_cheaters(clean_df, n=30):
             'is_cheater':            True,
             # cheater signatures
             'acpl':                  rng.uniform(0.02, 0.08),    # 2–8 cp
-            't1_agreement':          rng.uniform(0.68, 0.92),    # high engine match
             'cpl_std':               rng.uniform(0.06, 0.18),    # very consistent
             'critical_accuracy':     rng.uniform(0.70, 0.96),
             'skill_consistency_gap': rng.uniform(0.15, 0.40),
@@ -449,11 +446,11 @@ def create_synthetic_cheaters(clean_df, n=30):
 # ─── Visualization ────────────────────────────────────────────────────────────
 
 PAIRS = [
-    ('acpl',               't1_agreement'),
     ('acpl',               'cpl_std'),
-    ('t1_agreement',       'critical_accuracy'),
+    ('acpl',               'critical_accuracy'),
+    ('cpl_std',            'critical_accuracy'),
     ('skill_consistency_gap', 'acpl'),
-    ('low_acpl_game_rate', 't1_agreement'),
+    ('low_acpl_game_rate', 'cpl_std'),
     ('outlier_game_count', 'low_acpl_game_rate'),
 ]
 

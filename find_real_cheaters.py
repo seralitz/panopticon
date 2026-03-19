@@ -326,7 +326,6 @@ def sig_outlier_game_count(games, uid):
 def compute_signals(games, uid):
     return {
         "acpl":                  sig_acpl(games, uid),
-        "t1_agreement":          sig_t1(games, uid),
         "cpl_std":               sig_cpl_std(games, uid),
         "critical_accuracy":     sig_ca(games, uid),
         "skill_consistency_gap": sig_scg(games, uid),
@@ -336,12 +335,12 @@ def compute_signals(games, uid):
     }
 
 SIG_COLS = [
-    "acpl", "t1_agreement", "cpl_std",
+    "acpl", "cpl_std",
     "critical_accuracy", "skill_consistency_gap",
     "think_time_std", "low_acpl_game_rate", "outlier_game_count",
 ]
 SIG_NICE = [
-    "Avg Centipawn Loss", "T1 Move Agreement", "CPL Std-Dev",
+    "Avg Centipawn Loss", "CPL Std-Dev",
     "Critical Accuracy", "Skill-Consistency Gap",
     "Think-Time Std-Dev", "Low-ACPL Game Rate", "Outlier Game Count",
 ]
@@ -455,8 +454,8 @@ def main():
                "player": uid, "is_cheater": True}
         cheater_rows.append(row)
         print(f"{len(games):>3} games ({n_evals} evals)  "
-              f"t1={sigs['t1_agreement']:.3f}  acpl={sigs['acpl']:.3f}  "
-              f"ca={sigs['critical_accuracy']:.3f}  scg={sigs['skill_consistency_gap']:+.3f}")
+              f"acpl={sigs['acpl']:.3f}  ca={sigs['critical_accuracy']:.3f}  "
+              f"scg={sigs['skill_consistency_gap']:+.3f}  lar={sigs['low_acpl_game_rate']:.3f}")
         time.sleep(1.2)
 
     print(f"\n  Checked:             {n_checked}")
@@ -566,7 +565,7 @@ def main():
     # ── Visualization ────────────────────────────────────────────────
     print("\n  Generating comparison scatter plot …")
 
-    PAIRS = [(0,1),(0,2),(1,3),(2,3),(5,0),(6,1)]
+    PAIRS = [(0,1),(0,2),(1,2),(2,3),(4,0),(5,1)]
     clean_arr = clean_df[SIG_COLS].values
     cheat_arr = cheater_df[SIG_COLS].values
 

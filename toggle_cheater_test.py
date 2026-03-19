@@ -35,20 +35,20 @@ RNG_SEED         = 42
 # REFERENCE DATA  (from player_signals.csv)
 # ═══════════════════════════════════════════════════════════════════════
 SIG_COLS = [
-    "acpl", "t1_agreement", "cpl_std",
+    "acpl", "cpl_std",
     "critical_accuracy", "skill_consistency_gap",
     "think_time_std", "low_acpl_game_rate", "outlier_game_count",
 ]
-SIG_SHORT  = ["acpl", "t1", "cpl_std", "ca", "scg", "tts", "lar", "ogc"]
+SIG_SHORT  = ["acpl", "cpl_std", "ca", "scg", "tts", "lar", "ogc"]
 SIG_NICE   = [
-    "Avg Centipawn Loss", "T1 Move Agreement", "CPL Std-Dev",
+    "Avg Centipawn Loss", "CPL Std-Dev",
     "Critical Accuracy", "Skill-Consistency Gap",
     "Think-Time Std-Dev", "Low-ACPL Game Rate", "Outlier Game Count",
 ]
 # suspicion direction: +1 = higher is suspicious, -1 = lower is suspicious
-SIG_DIR     = np.array([-1, +1, -1, +1, +1, -1, +1, +1])
+SIG_DIR     = np.array([-1, -1, +1, +1, -1, +1, +1])
 # weights proportional to empirical σ-separation from find_real_cheaters run
-SIG_WEIGHTS = np.array([3.0, 3.2, 3.5, 4.4, 4.8, 2.0, 3.0, 3.5])
+SIG_WEIGHTS = np.array([3.0, 3.5, 4.4, 4.8, 2.0, 3.0, 3.5])
 
 ref_path = os.path.join(os.path.dirname(__file__), "player_signals.csv")
 _ref     = pd.read_csv(ref_path)
@@ -329,10 +329,10 @@ def sig_outlier_game_count(games, uid):
 
 def compute_signals(games, uid):
     return np.array([
-        sig_acpl(games, uid),               sig_t1(games, uid),
-        sig_cpl_std(games, uid),            sig_ca(games, uid),
-        sig_scg(games, uid),                sig_think_time_std(games, uid),
-        sig_low_acpl_game_rate(games, uid), sig_outlier_game_count(games, uid),
+        sig_acpl(games, uid),               sig_cpl_std(games, uid),
+        sig_ca(games, uid),                 sig_scg(games, uid),
+        sig_think_time_std(games, uid),     sig_low_acpl_game_rate(games, uid),
+        sig_outlier_game_count(games, uid),
     ])
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -446,7 +446,7 @@ def anomaly_score(sigs, rd=50):
     z_raw = (sigs - CLEAN_MEAN) / CLEAN_STD * SIG_DIR
     z = np.maximum(0, z_raw)
     if rd > 100:
-        z[4] *= 100 / rd               # RD-dampened skill-consistency gap (index 4)
+        z[3] *= 100 / rd               # RD-dampened skill-consistency gap (index 3)
     # weighted composite: signals with stronger empirical separation count more
     w = SIG_WEIGHTS / SIG_WEIGHTS.sum()
     composite = (z * w).sum()
@@ -468,8 +468,8 @@ def verdict(score, n_evals):
 # VISUALISATION
 # ═══════════════════════════════════════════════════════════════════════
 PAIRS = [
-    (0, 1), (0, 2), (1, 3),
-    (4, 0), (6, 1), (7, 6),
+    (0, 1), (0, 2), (1, 2),
+    (3, 0), (5, 1), (6, 5),
 ]
 
 def render(orig, tamp, player_name, out_path="toggle_cheater_test.png"):
@@ -589,7 +589,7 @@ def main():
     tamp_sigs = compute_signals(tampered, uid)
 
     # replace NaN with clean mean for safety
-    for i in range(8):
+    for i in range(7):
         if np.isnan(orig_sigs[i]):
             orig_sigs[i] = CLEAN_MEAN[i]
         if np.isnan(tamp_sigs[i]):
@@ -599,7 +599,7 @@ def main():
     hdr = f"    {'Signal':<28s} {'Original':>10s} {'Tampered':>10s} {'Δ':>9s}  Direction"
     print(hdr)
     print("    " + "─" * (len(hdr) - 4))
-    for i in range(8):
+    for i in range(7):
         delta = tamp_sigs[i] - orig_sigs[i]
         # did the signal move toward the cheater cluster?
         cheat_dir = "→ cheater" if delta * SIG_DIR[i] > 0.001 else "—"
@@ -621,7 +621,7 @@ def main():
 
     print(f"\n    Per-signal suspicion z-scores (tampered):")
     triggered = []
-    for i in range(8):
+    for i in range(7):
         flag = ""
         if tamp_z[i] >= 2.5:
             flag = "  ◆ ALERT"
