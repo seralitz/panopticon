@@ -15,7 +15,8 @@ import time
 import numpy as np
 import pandas as pd
 import requests
-from flask import Flask, jsonify, send_file
+from flask import Flask, jsonify, request, send_file
+from tetris import compute_cross_game_signals
 
 # ─── Constants ───────────────────────────────────────────────────────────────
 API                 = "https://lichess.org/api"
@@ -313,6 +314,8 @@ def index():
 
 @app.route("/api/analyze/<username>")
 def analyze(username):
+    tetris_user = request.args.get("tetris_user", "").strip()
+
     # 1. Profile
     user, err = fetch_user(username)
     if err:
@@ -335,7 +338,7 @@ def analyze(username):
     evals_count  = sum(1 for g in games if g.get("analysis") and len(g["analysis"]) >= 6)
     clocks_count = sum(1 for g in games if g.get("clocks") and len(g["clocks"]) >= 6)
 
-    # 3. Signals
+    # 3. Chess signals
     sigs_dict = compute_signals(games, uid)
     sigs_arr  = np.array([sigs_dict[c] for c in SIG_COLS], dtype=float)
 
@@ -348,15 +351,15 @@ def analyze(username):
     score, z_scores = anomaly_score(sigs_arr, rd)
     v = verdict(score, evals_count)
 
-    return jsonify({
+    response = {
         "meta": {
-            "username":      user.get("username", username),
-            "rating":        rating,
-            "rd":            rd,
-            "total_games":   total_games,
+            "username":       user.get("username", username),
+            "rating":         rating,
+            "rd":             rd,
+            "total_games":    total_games,
             "games_analyzed": len(games),
-            "evals_count":   evals_count,
-            "clocks_count":  clocks_count,
+            "evals_count":    evals_count,
+            "clocks_count":   clocks_count,
         },
         "sigs":        sigs_arr.tolist(),
         "z_scores":    z_scores,
@@ -364,7 +367,16 @@ def analyze(username):
         "verdict":     v,
         "clean_means": CLEAN_MEAN.tolist(),
         "clean_stds":  CLEAN_STD.tolist(),
-    })
+    }
+
+    # 5. Cross-game signals (optional — only when tetris_user supplied)
+    if tetris_user:
+        response["cross_game"] = compute_cross_game_signals(
+            games, uid, tetris_user,
+            _cpl_seq, get_evals, get_color,
+        )
+
+    return jsonify(response)
 
 
 if __name__ == "__main__":
