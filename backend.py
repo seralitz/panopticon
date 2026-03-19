@@ -370,5 +370,5 @@ def analyze(username):
 if __name__ == "__main__":
     n_clean = int((~_df.is_cheater).sum())
     print(f"Panopticon backend — clean baseline: {n_clean} players, {len(SIG_COLS)} signals")
-    print("Starting on http://localhost:5000")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    print("Starting on http://localhost:8080")
+    app.run(host="0.0.0.0", port=8080, debug=False)
