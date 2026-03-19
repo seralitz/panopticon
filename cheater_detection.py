@@ -33,9 +33,10 @@ TARGET_GAMES     = 10000
 GAMES_PER_PLAYER = 400
 LICHESS_API      = "https://lichess.org/api"
 REQUEST_DELAY    = 1.2    # seconds between API calls
-CPL_CAP          = 3.0    # clamp individual CPL at 3 pawns (reduces positional noise)
-OPENING_SKIP     = 10     # skip first 10 half-moves (5 full moves) — book theory
-OUTLIER_ACPL_T   = 0.12   # per-game ACPL below this is a suspiciously good game
+CPL_CAP            = 3.0    # clamp individual CPL at 3 pawns (reduces positional noise)
+OPENING_SKIP       = 10     # skip first 10 half-moves (5 full moves) — book theory
+OUTLIER_ACPL_T     = 0.12   # per-game ACPL below this is a suspiciously good game
+OUTLIER_Z_THRESHOLD = 2.0   # games more than this many σ below own mean are outliers
 
 # ─── Lichess API ─────────────────────────────────────────────────────────────
 
@@ -345,12 +346,42 @@ def low_acpl_game_rate(games, player):
     low = sum(1 for a in per_game if a < OUTLIER_ACPL_T)
     return low / len(per_game)
 
+
+# ─── Signal 8: Outlier Game Count ────────────────────────────────────────────
+
+def outlier_game_count(games, player):
+    """
+    Number of games where per-game ACPL is more than OUTLIER_Z_THRESHOLD σ
+    below the player's own career mean.
+
+    Unlike low_acpl_game_rate (fixed absolute threshold), this adapts to each
+    player's own baseline — it catches selective cheaters even when the player
+    has naturally low ACPL (GMs).  A clean player expects ~1–2 outlier games by
+    chance; a selective cheater will have a cluster of 5+ suspiciously perfect
+    games relative to their own normal play.
+    """
+    per_game = []
+    for g in games:
+        ev = _evals(g)
+        if not ev:
+            continue
+        losses = _cpl_seq(ev, _color(g, player) == 'white')
+        if len(losses) >= 5:
+            per_game.append(float(np.mean(losses)))
+    if len(per_game) < 10:
+        return np.nan
+    mu    = float(np.mean(per_game))
+    sigma = float(np.std(per_game))
+    if sigma < 1e-9:
+        return 0.0
+    return float(sum(1 for a in per_game if (mu - a) / sigma > OUTLIER_Z_THRESHOLD))
+
 # ─── Aggregate per player ─────────────────────────────────────────────────────
 
 SIGNAL_COLS = [
     'acpl', 't1_agreement', 'cpl_std',
     'critical_accuracy', 'skill_consistency_gap',
-    'think_time_std', 'low_acpl_game_rate',
+    'think_time_std', 'low_acpl_game_rate', 'outlier_game_count',
 ]
 NICE = {
     'acpl':                  'Avg Centipawn Loss',
@@ -360,6 +391,7 @@ NICE = {
     'skill_consistency_gap': 'Skill-Consistency Gap',
     'think_time_std':        'Think-Time Std-Dev',
     'low_acpl_game_rate':    'Low-ACPL Game Rate',
+    'outlier_game_count':    'Outlier Game Count',
 }
 
 
@@ -375,6 +407,7 @@ def compute_player_signals(games, player):
         'skill_consistency_gap': skill_consistency_gap(games, player),
         'think_time_std':        think_time_std(games, player),
         'low_acpl_game_rate':    low_acpl_game_rate(games, player),
+        'outlier_game_count':    outlier_game_count(games, player),
     }
     # require the three most data-rich signals
     if any(np.isnan(s[k]) for k in ('acpl', 'critical_accuracy', 'low_acpl_game_rate')):
@@ -405,6 +438,7 @@ def create_synthetic_cheaters(clean_df, n=30):
             'skill_consistency_gap': rng.uniform(0.15, 0.40),
             'think_time_std':        rng.uniform(0.4,  2.5),     # robotic uniform timing
             'low_acpl_game_rate':    rng.uniform(0.35, 0.85),    # many great games
+            'outlier_game_count':    rng.uniform(4.0,  18.0),    # many per-player outlier games
             'avg_rating':            rng.uniform(
                 clean_df['avg_rating'].quantile(0.25),
                 clean_df['avg_rating'].quantile(0.85)),
@@ -419,8 +453,8 @@ PAIRS = [
     ('acpl',               'cpl_std'),
     ('t1_agreement',       'critical_accuracy'),
     ('skill_consistency_gap', 'acpl'),
-    ('think_time_std',     'acpl'),
     ('low_acpl_game_rate', 't1_agreement'),
+    ('outlier_game_count', 'low_acpl_game_rate'),
 ]
 
 
@@ -519,7 +553,7 @@ def main():
           f'{len(viable)} with ≥15 games')
 
     # ── 4. Compute signals ───────────────────────────────────────────────
-    print('\n[4/6] Computing 7 behavioral signals per player …')
+    print('\n[4/6] Computing 8 behavioral signals per player …')
     rows = []
     for i, (player, games) in enumerate(viable.items()):
         if i % 50 == 0:

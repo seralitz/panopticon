@@ -37,18 +37,18 @@ RNG_SEED         = 42
 SIG_COLS = [
     "acpl", "t1_agreement", "cpl_std",
     "critical_accuracy", "skill_consistency_gap",
-    "think_time_std", "low_acpl_game_rate",
+    "think_time_std", "low_acpl_game_rate", "outlier_game_count",
 ]
-SIG_SHORT  = ["acpl", "t1", "cpl_std", "ca", "scg", "tts", "lar"]
+SIG_SHORT  = ["acpl", "t1", "cpl_std", "ca", "scg", "tts", "lar", "ogc"]
 SIG_NICE   = [
     "Avg Centipawn Loss", "T1 Move Agreement", "CPL Std-Dev",
     "Critical Accuracy", "Skill-Consistency Gap",
-    "Think-Time Std-Dev", "Low-ACPL Game Rate",
+    "Think-Time Std-Dev", "Low-ACPL Game Rate", "Outlier Game Count",
 ]
 # suspicion direction: +1 = higher is suspicious, -1 = lower is suspicious
-SIG_DIR     = np.array([-1, +1, -1, +1, +1, -1, +1])
+SIG_DIR     = np.array([-1, +1, -1, +1, +1, -1, +1, +1])
 # weights proportional to empirical σ-separation from find_real_cheaters run
-SIG_WEIGHTS = np.array([3.0, 3.2, 3.5, 4.4, 4.8, 2.0, 3.0])
+SIG_WEIGHTS = np.array([3.0, 3.2, 3.5, 4.4, 4.8, 2.0, 3.0, 3.5])
 
 ref_path = os.path.join(os.path.dirname(__file__), "player_signals.csv")
 _ref     = pd.read_csv(ref_path)
@@ -133,9 +133,10 @@ def game_result(game, color):
 # ═══════════════════════════════════════════════════════════════════════
 # SIGNAL COMPUTATION  (identical logic to Panopticon dashboard)
 # ═══════════════════════════════════════════════════════════════════════
-CPL_CAP        = 3.0
-OPENING_SKIP   = 10
-OUTLIER_ACPL_T = 0.12
+CPL_CAP             = 3.0
+OPENING_SKIP        = 10
+OUTLIER_ACPL_T      = 0.12
+OUTLIER_Z_THRESHOLD = 2.0
 
 
 def _cpl_seq(ev, is_w):
@@ -307,12 +308,31 @@ def sig_low_acpl_game_rate(games, uid):
     return low / len(per_game)
 
 
+def sig_outlier_game_count(games, uid):
+    """Games where per-game ACPL > OUTLIER_Z_THRESHOLD σ below player's own mean."""
+    per_game = []
+    for g in games:
+        ev = get_evals(g)
+        if not ev:
+            continue
+        losses = _cpl_seq(ev, get_color(g, uid) == "white")
+        if len(losses) >= 5:
+            per_game.append(float(np.mean(losses)))
+    if len(per_game) < 10:
+        return np.nan
+    mu    = float(np.mean(per_game))
+    sigma = float(np.std(per_game))
+    if sigma < 1e-9:
+        return 0.0
+    return float(sum(1 for a in per_game if (mu - a) / sigma > OUTLIER_Z_THRESHOLD))
+
+
 def compute_signals(games, uid):
     return np.array([
-        sig_acpl(games, uid),           sig_t1(games, uid),
-        sig_cpl_std(games, uid),        sig_ca(games, uid),
-        sig_scg(games, uid),            sig_think_time_std(games, uid),
-        sig_low_acpl_game_rate(games, uid),
+        sig_acpl(games, uid),               sig_t1(games, uid),
+        sig_cpl_std(games, uid),            sig_ca(games, uid),
+        sig_scg(games, uid),                sig_think_time_std(games, uid),
+        sig_low_acpl_game_rate(games, uid), sig_outlier_game_count(games, uid),
     ])
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -449,7 +469,7 @@ def verdict(score, n_evals):
 # ═══════════════════════════════════════════════════════════════════════
 PAIRS = [
     (0, 1), (0, 2), (1, 3),
-    (2, 3), (5, 0), (6, 1),
+    (4, 0), (6, 1), (7, 6),
 ]
 
 def render(orig, tamp, player_name, out_path="toggle_cheater_test.png"):
@@ -569,7 +589,7 @@ def main():
     tamp_sigs = compute_signals(tampered, uid)
 
     # replace NaN with clean mean for safety
-    for i in range(5):
+    for i in range(8):
         if np.isnan(orig_sigs[i]):
             orig_sigs[i] = CLEAN_MEAN[i]
         if np.isnan(tamp_sigs[i]):
@@ -579,7 +599,7 @@ def main():
     hdr = f"    {'Signal':<28s} {'Original':>10s} {'Tampered':>10s} {'Δ':>9s}  Direction"
     print(hdr)
     print("    " + "─" * (len(hdr) - 4))
-    for i in range(5):
+    for i in range(8):
         delta = tamp_sigs[i] - orig_sigs[i]
         # did the signal move toward the cheater cluster?
         cheat_dir = "→ cheater" if delta * SIG_DIR[i] > 0.001 else "—"
@@ -601,7 +621,7 @@ def main():
 
     print(f"\n    Per-signal suspicion z-scores (tampered):")
     triggered = []
-    for i in range(5):
+    for i in range(8):
         flag = ""
         if tamp_z[i] >= 2.5:
             flag = "  ◆ ALERT"

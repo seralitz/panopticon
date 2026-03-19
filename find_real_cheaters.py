@@ -118,9 +118,10 @@ def game_result(game, color):
         return 0.5
     return 1.0 if w == color else 0.0
 
-CPL_CAP        = 3.0    # clamp individual CPL at 3 pawns to reduce positional noise
-OPENING_SKIP   = 10     # skip first 10 half-moves (5 full moves) — book theory
-OUTLIER_ACPL_T = 0.12   # per-game ACPL below this is a suspiciously good game
+CPL_CAP             = 3.0    # clamp individual CPL at 3 pawns to reduce positional noise
+OPENING_SKIP        = 10     # skip first 10 half-moves (5 full moves) — book theory
+OUTLIER_ACPL_T      = 0.12   # per-game ACPL below this is a suspiciously good game
+OUTLIER_Z_THRESHOLD = 2.0    # games more than this many σ below own mean are outliers
 
 
 def _cpl_seq(ev, is_w):
@@ -298,6 +299,30 @@ def sig_low_acpl_game_rate(games, uid):
     low = sum(1 for a in per_game if a < OUTLIER_ACPL_T)
     return low / len(per_game)
 
+
+def sig_outlier_game_count(games, uid):
+    """
+    Number of games where per-game ACPL is > OUTLIER_Z_THRESHOLD σ below the
+    player's own career mean.  Player-relative threshold — catches selective
+    cheaters even when the player has naturally low ACPL (GMs etc.).
+    """
+    per_game = []
+    for g in games:
+        ev = get_evals(g)
+        if not ev:
+            continue
+        losses = _cpl_seq(ev, get_color(g, uid) == "white")
+        if len(losses) >= 5:
+            per_game.append(float(np.mean(losses)))
+    if len(per_game) < 10:
+        return np.nan
+    mu    = float(np.mean(per_game))
+    sigma = float(np.std(per_game))
+    if sigma < 1e-9:
+        return 0.0
+    return float(sum(1 for a in per_game if (mu - a) / sigma > OUTLIER_Z_THRESHOLD))
+
+
 def compute_signals(games, uid):
     return {
         "acpl":                  sig_acpl(games, uid),
@@ -307,17 +332,18 @@ def compute_signals(games, uid):
         "skill_consistency_gap": sig_scg(games, uid),
         "think_time_std":        sig_think_time_std(games, uid),
         "low_acpl_game_rate":    sig_low_acpl_game_rate(games, uid),
+        "outlier_game_count":    sig_outlier_game_count(games, uid),
     }
 
 SIG_COLS = [
     "acpl", "t1_agreement", "cpl_std",
     "critical_accuracy", "skill_consistency_gap",
-    "think_time_std", "low_acpl_game_rate",
+    "think_time_std", "low_acpl_game_rate", "outlier_game_count",
 ]
 SIG_NICE = [
     "Avg Centipawn Loss", "T1 Move Agreement", "CPL Std-Dev",
     "Critical Accuracy", "Skill-Consistency Gap",
-    "Think-Time Std-Dev", "Low-ACPL Game Rate",
+    "Think-Time Std-Dev", "Low-ACPL Game Rate", "Outlier Game Count",
 ]
 
 # ═══════════════════════════════════════════════════════════════════════
